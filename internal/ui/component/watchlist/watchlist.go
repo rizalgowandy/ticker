@@ -5,9 +5,9 @@ import (
 	"strconv"
 	"strings"
 
-	c "github.com/achannarasappa/ticker/internal/common"
-	s "github.com/achannarasappa/ticker/internal/sorter"
-	u "github.com/achannarasappa/ticker/internal/ui/util"
+	c "github.com/achannarasappa/ticker/v4/internal/common"
+	s "github.com/achannarasappa/ticker/v4/internal/sorter"
+	u "github.com/achannarasappa/ticker/v4/internal/ui/util"
 
 	grid "github.com/achannarasappa/term-grid"
 )
@@ -224,7 +224,7 @@ func buildCells(asset c.Asset, config c.Config, styles c.Styles, cellWidths cell
 					VisibleMinWidth: widthMinTerm + cellWidths.WidthQuoteExtended + (6 * widthGutter) + (3 * widthLabel) + cellWidths.WidthQuoteRange + cellWidths.WidthVolumeMarketCap,
 				},
 				{
-					Text:            textVolumeMarketCap(asset, styles),
+					Text:            textVolumeMarketCap(asset),
 					Width:           cellWidths.WidthVolumeMarketCap,
 					Align:           grid.Right,
 					VisibleMinWidth: widthMinTerm + cellWidths.WidthQuoteExtended + (5 * widthGutter) + (2 * widthLabel) + cellWidths.WidthQuoteRange + cellWidths.WidthVolumeMarketCap,
@@ -307,6 +307,21 @@ func textPosition(asset c.Asset, styles c.Styles) string {
 
 func textQuoteExtended(asset c.Asset, styles c.Styles) string {
 
+	if asset.Class == c.AssetClassFuturesContract && asset.QuoteFutures.IndexPrice == 0.0 {
+		return ""
+	}
+
+	if asset.Class == c.AssetClassFuturesContract {
+		return styles.Text(u.ConvertFloatToString(asset.QuoteFutures.IndexPrice, asset.Meta.IsVariablePrecision)) +
+			"\n" +
+			styles.Text(u.ConvertFloatToString(asset.QuoteFutures.Basis, false)) + "%"
+	}
+
+	if asset.QuotePrice.PriceOpen == 0.0 {
+		return styles.Text(u.ConvertFloatToString(asset.QuotePrice.PricePrevClose, asset.Meta.IsVariablePrecision)) +
+			"\n"
+	}
+
 	return styles.Text(u.ConvertFloatToString(asset.QuotePrice.PricePrevClose, asset.Meta.IsVariablePrecision)) +
 		"\n" +
 		styles.Text(u.ConvertFloatToString(asset.QuotePrice.PriceOpen, asset.Meta.IsVariablePrecision))
@@ -314,6 +329,21 @@ func textQuoteExtended(asset c.Asset, styles c.Styles) string {
 }
 
 func textQuoteExtendedLabels(asset c.Asset, styles c.Styles) string {
+
+	if asset.Class == c.AssetClassFuturesContract && asset.QuoteFutures.IndexPrice == 0.0 {
+		return ""
+	}
+
+	if asset.Class == c.AssetClassFuturesContract {
+		return styles.TextLabel("Index Price:") +
+			"\n" +
+			styles.TextLabel("Basis:")
+	}
+
+	if asset.QuotePrice.PriceOpen == 0.0 {
+		return styles.TextLabel("Prev. Close:") +
+			"\n"
+	}
 
 	return styles.TextLabel("Prev. Close:") +
 		"\n" +
@@ -345,10 +375,22 @@ func textPositionExtendedLabels(asset c.Asset, styles c.Styles) string {
 
 func textQuoteRange(asset c.Asset, styles c.Styles) string {
 
-	textDayRange := ""
+	if asset.Class == c.AssetClassFuturesContract {
+
+		if asset.QuotePrice.PriceDayHigh != 0.0 && asset.QuotePrice.PriceDayLow != 0.0 {
+			return u.ConvertFloatToString(asset.QuotePrice.PriceDayLow, asset.Meta.IsVariablePrecision) +
+				styles.Text(" - ") +
+				u.ConvertFloatToString(asset.QuotePrice.PriceDayHigh, asset.Meta.IsVariablePrecision) +
+				"\n" +
+				asset.QuoteFutures.Expiry
+		}
+
+		return asset.QuoteFutures.Expiry
+
+	}
 
 	if asset.QuotePrice.PriceDayHigh != 0.0 && asset.QuotePrice.PriceDayLow != 0.0 {
-		textDayRange = u.ConvertFloatToString(asset.QuotePrice.PriceDayLow, asset.Meta.IsVariablePrecision) +
+		return u.ConvertFloatToString(asset.QuotePrice.PriceDayLow, asset.Meta.IsVariablePrecision) +
 			styles.Text(" - ") +
 			u.ConvertFloatToString(asset.QuotePrice.PriceDayHigh, asset.Meta.IsVariablePrecision) +
 			"\n" +
@@ -357,24 +399,39 @@ func textQuoteRange(asset c.Asset, styles c.Styles) string {
 			u.ConvertFloatToString(asset.QuoteExtended.FiftyTwoWeekHigh, asset.Meta.IsVariablePrecision)
 	}
 
-	return textDayRange
+	return ""
 
 }
 
 func textQuoteRangeLabels(asset c.Asset, styles c.Styles) string {
 
-	textDayRange := ""
+	if asset.Class == c.AssetClassFuturesContract {
+
+		if asset.QuotePrice.PriceDayHigh != 0.0 && asset.QuotePrice.PriceDayLow != 0.0 {
+			return styles.TextLabel("Day Range:") +
+				"\n" +
+				styles.TextLabel("Expiry:")
+		}
+
+		return styles.TextLabel("Expiry:")
+	}
 
 	if asset.QuotePrice.PriceDayHigh != 0.0 && asset.QuotePrice.PriceDayLow != 0.0 {
-		textDayRange = styles.TextLabel("Day Range:") +
+		return styles.TextLabel("Day Range:") +
 			"\n" +
 			styles.TextLabel("52wk Range:")
 	}
 
-	return textDayRange
+	return ""
 }
 
-func textVolumeMarketCap(asset c.Asset, styles c.Styles) string {
+func textVolumeMarketCap(asset c.Asset) string {
+
+	if asset.Class == c.AssetClassFuturesContract {
+		return u.ConvertFloatToString(asset.QuoteFutures.OpenInterest, true) +
+			"\n" +
+			u.ConvertFloatToString(asset.QuoteExtended.Volume, true)
+	}
 
 	return u.ConvertFloatToString(asset.QuoteExtended.MarketCap, true) +
 		"\n" +
@@ -382,6 +439,12 @@ func textVolumeMarketCap(asset c.Asset, styles c.Styles) string {
 }
 
 func textVolumeMarketCapLabels(asset c.Asset, styles c.Styles) string {
+
+	if asset.Class == c.AssetClassFuturesContract {
+		return styles.TextLabel("Open Interest:") +
+			"\n" +
+			styles.TextLabel("Volume:")
+	}
 
 	return styles.TextLabel("Market Cap:") +
 		"\n" +

@@ -1,10 +1,11 @@
 package asset
 
 import (
-	c "github.com/achannarasappa/ticker/internal/common"
-	"github.com/achannarasappa/ticker/internal/currency"
+	c "github.com/achannarasappa/ticker/v4/internal/common"
+	"github.com/achannarasappa/ticker/v4/internal/currency"
 )
 
+// AggregatedLot represents a cost basis lot of an asset grouped by symbol
 type AggregatedLot struct {
 	Symbol     string
 	Cost       float64
@@ -20,6 +21,7 @@ type HoldingSummary struct {
 	DayChange   c.HoldingChange
 }
 
+// GetAssets returns assets from an asset group quote
 func GetAssets(ctx c.Context, assetGroupQuote c.AssetGroupQuote) ([]c.Asset, HoldingSummary) {
 
 	var holdingSummary HoldingSummary
@@ -30,8 +32,7 @@ func GetAssets(ctx c.Context, assetGroupQuote c.AssetGroupQuote) ([]c.Asset, Hol
 
 		currencyRateByUse := currency.GetCurrencyRateFromContext(ctx, assetQuote.Currency.FromCurrencyCode)
 
-		holding := getHoldingFromAssetQuote(assetQuote, holdingsBySymbol)
-		holding = convertAssetHoldingCurrency(currencyRateByUse, holding)
+		holding := getHoldingFromAssetQuote(assetQuote, holdingsBySymbol, currencyRateByUse)
 		holdingSummary = addHoldingToHoldingSummary(holdingSummary, holding, currencyRateByUse)
 
 		assets = append(assets, c.Asset{
@@ -45,6 +46,7 @@ func GetAssets(ctx c.Context, assetGroupQuote c.AssetGroupQuote) ([]c.Asset, Hol
 			Holding:       holding,
 			QuotePrice:    convertAssetQuotePriceCurrency(currencyRateByUse, assetQuote.QuotePrice),
 			QuoteExtended: convertAssetQuoteExtendedCurrency(currencyRateByUse, assetQuote.QuoteExtended),
+			QuoteFutures:  assetQuote.QuoteFutures,
 			QuoteSource:   assetQuote.QuoteSource,
 			Exchange:      assetQuote.Exchange,
 			Meta: c.Meta{
@@ -69,7 +71,7 @@ func addHoldingToHoldingSummary(holdingSummary HoldingSummary, holding c.Holding
 
 	value := holdingSummary.Value + (holding.Value * currencyRateByUse.SummaryValue)
 	cost := holdingSummary.Cost + (holding.Cost * currencyRateByUse.SummaryCost)
-	dayChange := holdingSummary.DayChange.Amount + holding.DayChange.Amount
+	dayChange := holdingSummary.DayChange.Amount + (holding.DayChange.Amount * currencyRateByUse.SummaryValue)
 	totalChange := value - cost
 	totalChangePercent := (totalChange / cost) * 100
 	dayChangePercent := (dayChange / value) * 100
@@ -102,21 +104,22 @@ func updateHoldingWeights(assets []c.Asset, holdingSummary HoldingSummary) []c.A
 
 }
 
-func getHoldingFromAssetQuote(assetQuote c.AssetQuote, lotsBySymbol map[string]AggregatedLot) c.Holding {
+func getHoldingFromAssetQuote(assetQuote c.AssetQuote, lotsBySymbol map[string]AggregatedLot, currencyRateByUse currency.CurrencyRateByUse) c.Holding {
 
 	if aggregatedLot, ok := lotsBySymbol[assetQuote.Symbol]; ok {
-		value := aggregatedLot.Quantity * assetQuote.QuotePrice.Price
-		totalChangeAmount := value - aggregatedLot.Cost
-		totalChangePercent := (totalChangeAmount / aggregatedLot.Cost) * 100
+		value := aggregatedLot.Quantity * assetQuote.QuotePrice.Price * currencyRateByUse.QuotePrice
+		cost := aggregatedLot.Cost * currencyRateByUse.PositionCost
+		totalChangeAmount := value - cost
+		totalChangePercent := (totalChangeAmount / cost) * 100
 
 		return c.Holding{
 			Value:     value,
-			Cost:      aggregatedLot.Cost,
+			Cost:      cost,
 			Quantity:  aggregatedLot.Quantity,
 			UnitValue: value / aggregatedLot.Quantity,
-			UnitCost:  aggregatedLot.Cost / aggregatedLot.Quantity,
+			UnitCost:  cost / aggregatedLot.Quantity,
 			DayChange: c.HoldingChange{
-				Amount:  assetQuote.QuotePrice.Change * aggregatedLot.Quantity,
+				Amount:  assetQuote.QuotePrice.Change * aggregatedLot.Quantity * currencyRateByUse.QuotePrice,
 				Percent: assetQuote.QuotePrice.ChangePercent,
 			},
 			TotalChange: c.HoldingChange{
@@ -128,32 +131,6 @@ func getHoldingFromAssetQuote(assetQuote c.AssetQuote, lotsBySymbol map[string]A
 	}
 
 	return c.Holding{}
-
-}
-
-// GetSymbols retrieves a unique slice of symbols from the watchlist and lots sections of the config
-func GetSymbols(config c.Config) []string {
-
-	symbols := make(map[string]bool)
-	symbolsUnique := make([]string, 0)
-
-	for _, symbol := range config.Watchlist {
-		if !symbols[symbol] {
-			symbols[symbol] = true
-			symbolsUnique = append(symbolsUnique, symbol)
-		}
-	}
-
-	if config.ShowHoldings {
-		for _, lot := range config.Lots {
-			if !symbols[lot.Symbol] {
-				symbols[lot.Symbol] = true
-				symbolsUnique = append(symbolsUnique, lot.Symbol)
-			}
-		}
-	}
-
-	return symbolsUnique
 
 }
 
@@ -180,8 +157,8 @@ func getLots(lots []c.Lot) map[string]AggregatedLot {
 
 		} else {
 
-			aggregatedLot.Quantity = aggregatedLot.Quantity + lot.Quantity
-			aggregatedLot.Cost = aggregatedLot.Cost + (lot.Quantity * lot.UnitCost)
+			aggregatedLot.Quantity += lot.Quantity
+			aggregatedLot.Cost += lot.Quantity * lot.UnitCost
 
 			aggregatedLots[lot.Symbol] = aggregatedLot
 

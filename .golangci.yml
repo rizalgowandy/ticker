@@ -1,0 +1,33 @@
+linters:
+  presets:
+    - bugs
+    - complexity
+    - format
+    - performance
+    - unused
+    - style
+  disable:
+    - paralleltest
+    - wrapcheck
+    - whitespace
+    - wsl
+    - godot
+    - lll
+    - funlen
+    - gomnd
+    - gofumpt
+    - unparam
+    - tagliatelle
+    - forbidigo
+    - gci
+    - varnamelen
+    - exhaustruct
+    - depguard
+    - nolintlint
+    - mnd
+    - copyloopvar
+run:
+  tests: false
+issues:
+  fix: false
+    

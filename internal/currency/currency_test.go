@@ -1,11 +1,11 @@
 package currency_test
 
 import (
-	. "github.com/onsi/ginkgo"
+	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
-	c "github.com/achannarasappa/ticker/internal/common"
-	. "github.com/achannarasappa/ticker/internal/currency"
+	c "github.com/achannarasappa/ticker/v4/internal/common"
+	. "github.com/achannarasappa/ticker/v4/internal/currency"
 )
 
 var _ = Describe("Currency", func() {
@@ -152,6 +152,7 @@ var _ = Describe("Currency", func() {
 			}
 			outputCurrencyRateByUse := GetCurrencyRateFromContext(inputCtx, "USD")
 			Expect(outputCurrencyRateByUse.SummaryCost).To(Equal(1.0))
+			Expect(outputCurrencyRateByUse.PositionCost).To(Equal(1.0))
 		})
 	})
 })

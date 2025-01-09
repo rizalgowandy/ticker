@@ -4,22 +4,22 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/go-resty/resty/v2"
-	"github.com/spf13/afero"
 	"github.com/spf13/cobra"
 
-	"github.com/achannarasappa/ticker/internal/cli"
-	c "github.com/achannarasappa/ticker/internal/common"
-	"github.com/achannarasappa/ticker/internal/print"
-	"github.com/achannarasappa/ticker/internal/ui"
+	"github.com/achannarasappa/ticker/v4/internal/cli"
+	c "github.com/achannarasappa/ticker/v4/internal/common"
+	"github.com/achannarasappa/ticker/v4/internal/print"
+	"github.com/achannarasappa/ticker/v4/internal/ui"
 )
 
+//nolint:gochecknoglobals
 var (
 	// Version is a placeholder that is replaced at build time with a linker flag (-ldflags)
-	Version      string = "v0.0.0"
+	Version      = "v0.0.0"
 	configPath   string
 	dep          c.Dependencies
 	ctx          c.Context
+	config       c.Config
 	options      cli.Options
 	optionsPrint print.Options
 	err          error
@@ -27,13 +27,23 @@ var (
 		Version: Version,
 		Use:     "ticker",
 		Short:   "Terminal stock ticker and stock gain/loss tracker",
-		Args:    cli.Validate(&ctx, &options, &err),
+		PreRun:  initContext,
+		Args:    cli.Validate(&config, &options, &err),
 		Run:     cli.Run(ui.Start(&dep, &ctx)),
 	}
 	printCmd = &cobra.Command{
-		Use:   "print",
-		Short: "Prints holdings",
-		Run:   print.Run(&dep, &ctx, &optionsPrint),
+		Use:    "print",
+		Short:  "Prints holdings",
+		PreRun: initContext,
+		Args:   cli.Validate(&config, &options, &err),
+		Run:    print.Run(&dep, &ctx, &optionsPrint),
+	}
+	summaryCmd = &cobra.Command{
+		Use:    "summary",
+		Short:  "Prints holdings summary for the default group",
+		PreRun: initContext,
+		Args:   cli.Validate(&config, &options, &err),
+		Run:    print.RunSummary(&dep, &ctx, &optionsPrint),
 	}
 )
 
@@ -45,8 +55,9 @@ func Execute() {
 	}
 }
 
-func init() {
+func init() { //nolint: gochecknoinits
 	cobra.OnInitialize(initConfig)
+
 	rootCmd.Flags().StringVar(&configPath, "config", "", "config file (default is $HOME/.ticker.yaml)")
 	rootCmd.Flags().StringVarP(&options.Watchlist, "watchlist", "w", "", "comma separated list of symbols to watch")
 	rootCmd.Flags().IntVarP(&options.RefreshInterval, "interval", "i", 0, "refresh interval in seconds")
@@ -57,16 +68,34 @@ func init() {
 	rootCmd.Flags().BoolVar(&options.ShowHoldings, "show-holdings", false, "display average unit cost, quantity, portfolio weight")
 	rootCmd.Flags().StringVar(&options.Proxy, "proxy", "", "proxy URL for requests (default is none)")
 	rootCmd.Flags().StringVar(&options.Sort, "sort", "", "sort quotes on the UI. Set \"alpha\" to sort by ticker name. Set \"value\" to sort by position value. Keep empty to sort according to change percent")
+
+	printCmd.PersistentFlags().StringVar(&optionsPrint.Format, "format", "", "output format for printing holdings. Set \"csv\" to print as a CSV or \"json\" for JSON. Defaults to JSON.")
+	printCmd.PersistentFlags().StringVar(&configPath, "config", "", "config file (default is $HOME/.ticker.yaml)")
+	printCmd.AddCommand(summaryCmd)
+
 	rootCmd.AddCommand(printCmd)
-	printCmd.Flags().StringVar(&optionsPrint.Format, "format", "", "output format for printing holdings. Set \"csv\" to print as a CSV or \"json\" for JSON. Defaults to JSON.")
-	printCmd.Flags().StringVar(&configPath, "config", "", "config file (default is $HOME/.ticker.yaml)")
 }
 
 func initConfig() {
-	dep = c.Dependencies{
-		Fs:         afero.NewOsFs(),
-		HttpClient: resty.New(),
+
+	dep = cli.GetDependencies()
+
+	config, err = cli.GetConfig(dep, configPath, options)
+
+	if err != nil {
+		fmt.Println(err)
+		os.Exit(1)
 	}
-	ctx, err = cli.GetContext(dep, options, configPath)
+
+}
+
+func initContext(_ *cobra.Command, _ []string) {
+
+	ctx, err = cli.GetContext(dep, config)
+
+	if err != nil {
+		fmt.Println(err)
+		os.Exit(1)
+	}
 
 }

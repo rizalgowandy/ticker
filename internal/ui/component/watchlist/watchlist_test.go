@@ -5,11 +5,11 @@ import (
 	"strings"
 
 	"github.com/acarl005/stripansi"
-	. "github.com/onsi/ginkgo"
+	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
-	c "github.com/achannarasappa/ticker/internal/common"
-	. "github.com/achannarasappa/ticker/internal/ui/component/watchlist"
+	c "github.com/achannarasappa/ticker/v4/internal/common"
+	. "github.com/achannarasappa/ticker/v4/internal/ui/component/watchlist"
 )
 
 func removeFormatting(text string) string {
@@ -345,23 +345,64 @@ var _ = Describe("Watchlist", func() {
 			Expect(removeFormatting(m.View())).To(ContainSubstring("300.00 - 2000.00"))
 		})
 
-		When("there is no day range", func() {
+		When("there is no day range or open price", func() {
+
+			m := NewModel(c.Context{
+				Reference: c.Reference{Styles: stylesFixture},
+				Config: c.Config{
+					ExtraInfoFundamentals: true,
+				},
+			})
+			m.Width = 135
+			m.Assets = []c.Asset{
+				{
+					Symbol: "BTC-USD",
+					Name:   "Bitcoin",
+					QuotePrice: c.QuotePrice{
+						Price:          5000.0,
+						PricePrevClose: 1000.0,
+						PriceOpen:      0.0,
+						Change:         1000.0,
+						ChangePercent:  20.0,
+					},
+					Exchange: c.Exchange{
+						IsActive:                true,
+						IsRegularTradingSession: true,
+					},
+				},
+			}
+
 			It("should not render the day range field", func() {
+				Expect(removeFormatting(m.View())).ToNot(ContainSubstring("Day Range"))
+				Expect(removeFormatting(m.View())).ToNot(ContainSubstring("52wk Range"))
+				Expect(removeFormatting(m.View())).ToNot(ContainSubstring("100.00 - 200.00"))
+				Expect(removeFormatting(m.View())).ToNot(ContainSubstring("300.00 - 2000.00"))
+			})
+
+			It("should render a placeholder for the open price", func() {
+				Expect(removeFormatting(m.View())).ToNot(ContainSubstring("Open:"))
+			})
+
+		})
+
+		When("the asset is a futures contract", func() {
+			It("should render the underlying asset symbol", func() {
 				m := NewModel(c.Context{
 					Reference: c.Reference{Styles: stylesFixture},
 					Config: c.Config{
 						ExtraInfoFundamentals: true,
 					},
 				})
-				m.Width = 135
+				m.Width = 150
 				m.Assets = []c.Asset{
 					{
-						Symbol: "BTC-USD",
-						Name:   "Bitcoin",
+						Symbol: "BIT-27DEC24-CDE",
+						Name:   "Nano Bitcoin Futures",
+						Class:  c.AssetClassFuturesContract,
 						QuotePrice: c.QuotePrice{
-							Price:          5000.0,
+							Price:          50333.0,
 							PricePrevClose: 1000.0,
-							PriceOpen:      1000.0,
+							PriceOpen:      0.0,
 							Change:         1000.0,
 							ChangePercent:  20.0,
 						},
@@ -369,13 +410,79 @@ var _ = Describe("Watchlist", func() {
 							IsActive:                true,
 							IsRegularTradingSession: true,
 						},
+						QuoteFutures: c.QuoteFutures{
+							IndexPrice: 50312,
+							Basis:      10.0,
+							Expiry:     "5d 10h",
+						},
 					},
 				}
+				Expect(removeFormatting(m.View())).To(ContainSubstring("50312"))
+				Expect(removeFormatting(m.View())).To(ContainSubstring("5d 10h"))
+				Expect(removeFormatting(m.View())).To(ContainSubstring("10.00%"))
+			})
 
-				Expect(removeFormatting(m.View())).ToNot(ContainSubstring("Day Range"))
-				Expect(removeFormatting(m.View())).ToNot(ContainSubstring("52wk Range"))
-				Expect(removeFormatting(m.View())).ToNot(ContainSubstring("100.00 - 200.00"))
-				Expect(removeFormatting(m.View())).ToNot(ContainSubstring("300.00 - 2000.00"))
+			When("the index price is not set", func() {
+				It("should not render the index price", func() {
+					m := NewModel(c.Context{
+						Reference: c.Reference{Styles: stylesFixture},
+						Config: c.Config{
+							ExtraInfoFundamentals: true,
+						},
+					})
+					m.Width = 150
+					m.Assets = []c.Asset{
+						{
+							Symbol: "BIT-27DEC24-CDE",
+							Name:   "Nano Bitcoin Futures",
+							Class:  c.AssetClassFuturesContract,
+							QuotePrice: c.QuotePrice{
+								Price:          50333.0,
+								PricePrevClose: 1000.0,
+								PriceOpen:      0.0,
+								Change:         1000.0,
+								ChangePercent:  20.0,
+							},
+						},
+					}
+					Expect(removeFormatting(m.View())).ToNot(ContainSubstring("Index Price"))
+					Expect(removeFormatting(m.View())).ToNot(ContainSubstring("Basis"))
+				})
+			})
+
+			When("the day range and expiry are set", func() {
+				It("should render both fields", func() {
+					m := NewModel(c.Context{
+						Reference: c.Reference{Styles: stylesFixture},
+						Config: c.Config{
+							ExtraInfoFundamentals: true,
+						},
+					})
+					m.Width = 150
+					m.Assets = []c.Asset{
+						{
+							Symbol: "BIT-27DEC24-CDE",
+							Name:   "Nano Bitcoin Futures",
+							Class:  c.AssetClassFuturesContract,
+							QuotePrice: c.QuotePrice{
+								Price:         50333.0,
+								PriceDayHigh:  50500.0,
+								PriceDayLow:   49000.0,
+								Change:        1000.0,
+								ChangePercent: 20.0,
+							},
+							QuoteFutures: c.QuoteFutures{
+								IndexPrice: 50312,
+								Basis:      10.0,
+								Expiry:     "5d 10h",
+							},
+						},
+					}
+					Expect(removeFormatting(m.View())).To(ContainSubstring("Day Range"))
+					Expect(removeFormatting(m.View())).To(ContainSubstring("49000.00 - 50500.00"))
+					Expect(removeFormatting(m.View())).To(ContainSubstring("Expiry"))
+					Expect(removeFormatting(m.View())).To(ContainSubstring("5d 10h"))
+				})
 			})
 		})
 	})

@@ -3,12 +3,12 @@ package summary_test
 import (
 	"strings"
 
-	"github.com/achannarasappa/ticker/internal/asset"
-	c "github.com/achannarasappa/ticker/internal/common"
-	. "github.com/achannarasappa/ticker/internal/ui/component/summary"
+	"github.com/achannarasappa/ticker/v4/internal/asset"
+	c "github.com/achannarasappa/ticker/v4/internal/common"
+	. "github.com/achannarasappa/ticker/v4/internal/ui/component/summary"
 
 	"github.com/acarl005/stripansi"
-	. "github.com/onsi/ginkgo"
+	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 )
 
@@ -78,7 +78,7 @@ var _ = Describe("Summary", func() {
 		It("should render an empty summary", func() {
 			m := NewModel(ctxFixture)
 			Expect(removeFormatting(m.View())).To(Equal(strings.Join([]string{
-				"Day Change: 0.00 (0.00%) • Change: 0.00 (0.00%)  • Value:   • Cost:  ",
+				"Day Change: 0.00 (0.00%) • Change: 0.00 (0.00%)  • Value: 0.00  • Cost: 0.00 ",
 				"━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━",
 			}, "\n")))
 		})

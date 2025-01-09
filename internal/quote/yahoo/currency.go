@@ -1,10 +1,9 @@
 package yahoo
 
 import (
-	"fmt"
 	"strings"
 
-	c "github.com/achannarasappa/ticker/internal/common"
+	c "github.com/achannarasappa/ticker/v4/internal/common"
 	"github.com/go-resty/resty/v2"
 )
 
@@ -19,7 +18,7 @@ func transformResponseCurrency(responseQuote ResponseQuote) c.CurrencyRate {
 	return c.CurrencyRate{
 		FromCurrency: fromCurrency,
 		ToCurrency:   toCurrency,
-		Rate:         responseQuote.RegularMarketPrice,
+		Rate:         responseQuote.RegularMarketPrice.Raw,
 	}
 
 }
@@ -40,17 +39,18 @@ func transformResponseCurrencies(responseQuotes []ResponseQuote) c.CurrencyRates
 func getCurrencyRatesFromCurrencyPairSymbols(client resty.Client, currencyPairSymbols []string) (c.CurrencyRates, error) {
 
 	symbolsString := strings.Join(currencyPairSymbols, ",")
-	url := fmt.Sprintf("https://query1.finance.yahoo.com/v7/finance/quote?lang=en-US&region=US&corsDomain=finance.yahoo.com&fields=regularMarketPrice,currency&symbols=%s", symbolsString)
 
 	res, err := client.R().
 		SetResult(Response{}).
-		Get(url)
+		SetQueryParam("fields", "regularMarketPrice,currency").
+		SetQueryParam("symbols", symbolsString).
+		Get("/v7/finance/quote")
 
 	if err != nil {
 		return c.CurrencyRates{}, err
 	}
 
-	return transformResponseCurrencies((res.Result().(*Response)).QuoteResponse.Quotes), nil
+	return transformResponseCurrencies((res.Result().(*Response)).QuoteResponse.Quotes), nil //nolint:forcetypeassert
 }
 
 func transformResponseCurrencyPairs(responseQuotes []ResponseQuote, targetCurrency string) []string {
@@ -75,16 +75,18 @@ func transformResponseCurrencyPairs(responseQuotes []ResponseQuote, targetCurren
 func getCurrencyPairSymbols(client resty.Client, symbols []string, targetCurrency string) ([]string, error) {
 
 	symbolsString := strings.Join(symbols, ",")
-	url := fmt.Sprintf("https://query1.finance.yahoo.com/v7/finance/quote?lang=en-US&region=US&corsDomain=finance.yahoo.com&fields=regularMarketPrice,currency&symbols=%s", symbolsString)
+
 	res, err := client.R().
 		SetResult(Response{}).
-		Get(url)
+		SetQueryParam("fields", "regularMarketPrice,currency").
+		SetQueryParam("symbols", symbolsString).
+		Get("/v7/finance/quote")
 
 	if err != nil {
 		return []string{}, err
 	}
 
-	return transformResponseCurrencyPairs((res.Result().(*Response)).QuoteResponse.Quotes, targetCurrency), nil
+	return transformResponseCurrencyPairs((res.Result().(*Response)).QuoteResponse.Quotes, targetCurrency), nil //nolint:forcetypeassert
 }
 
 // GetCurrencyRates retrieves the currency rates to convert from each currency for the given symbols to the target currency
@@ -100,7 +102,7 @@ func GetCurrencyRates(client resty.Client, symbols []string, targetCurrency stri
 		return c.CurrencyRates{}, err
 	}
 
-	if len(currencyPairSymbols) <= 0 {
+	if len(currencyPairSymbols) == 0 {
 		return c.CurrencyRates{}, nil
 	}
 

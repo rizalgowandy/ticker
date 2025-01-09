@@ -64,14 +64,21 @@ type AssetGroupQuote struct {
 
 // Reference represents derived configuration for internal use from user defined configuration
 type Reference struct {
-	CurrencyRates CurrencyRates
-	Styles        Styles
+	CurrencyRates                  CurrencyRates
+	SourceToUnderlyingAssetSymbols map[QuoteSource][]string
+	Styles                         Styles
 }
 
 // Dependencies represents references to external dependencies
 type Dependencies struct {
-	Fs         afero.Fs
-	HttpClient *resty.Client
+	Fs          afero.Fs
+	HttpClients DependenciesHttpClients //nolint:golint,stylecheck,revive
+}
+
+type DependenciesHttpClients struct { //nolint:golint,stylecheck,revive
+	Default      *resty.Client
+	Yahoo        *resty.Client
+	YahooSession *resty.Client
 }
 
 // Lot represents a cost basis lot
@@ -160,6 +167,14 @@ type QuoteExtended struct {
 	Volume           float64
 }
 
+type QuoteFutures struct {
+	SymbolUnderlying string
+	IndexPrice       float64
+	Basis            float64
+	OpenInterest     float64
+	Expiry           string
+}
+
 type Exchange struct {
 	Name                    string
 	Delay                   float64
@@ -185,6 +200,7 @@ type Asset struct {
 	Holding       Holding
 	QuotePrice    QuotePrice
 	QuoteExtended QuoteExtended
+	QuoteFutures  QuoteFutures
 	QuoteSource   QuoteSource
 	Exchange      Exchange
 	Meta          Meta
@@ -198,6 +214,7 @@ const (
 	AssetClassCryptocurrency
 	AssetClassPrivateSecurity
 	AssetClassUnknown
+	AssetClassFuturesContract
 )
 
 type QuoteSource int
@@ -205,6 +222,10 @@ type QuoteSource int
 const (
 	QuoteSourceYahoo QuoteSource = iota
 	QuoteSourceUserDefined
+	QuoteSourceCoingecko
+	QuoteSourceUnknown
+	QuoteSourceCoinCap
+	QuoteSourceCoinbase
 )
 
 // AssetQuote represents a price quote and related attributes for a single security
@@ -215,6 +236,7 @@ type AssetQuote struct {
 	Currency      Currency
 	QuotePrice    QuotePrice
 	QuoteExtended QuoteExtended
+	QuoteFutures  QuoteFutures
 	QuoteSource   QuoteSource
 	Exchange      Exchange
 	Meta          Meta

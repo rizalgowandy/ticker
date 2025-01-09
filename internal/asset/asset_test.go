@@ -1,11 +1,11 @@
 package asset_test
 
 import (
-	. "github.com/onsi/ginkgo"
+	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
-	. "github.com/achannarasappa/ticker/internal/asset"
-	c "github.com/achannarasappa/ticker/internal/common"
+	. "github.com/achannarasappa/ticker/v4/internal/asset"
+	c "github.com/achannarasappa/ticker/v4/internal/common"
 )
 
 var _ = Describe("Asset", func() {
@@ -91,15 +91,43 @@ var _ = Describe("Asset", func() {
 							ToCurrency:   "EUR",
 							Rate:         1.5,
 						},
+						"GBP": {
+							FromCurrency: "GBP",
+							ToCurrency:   "EUR",
+							Rate:         2,
+						},
 					},
 				},
 			}
 			inputAssetGroupQuote := fixtureAssetGroupQuote
+			inputAssetGroupQuote.AssetQuotes = []c.AssetQuote{
+				{
+					Name:          "ThoughtWorks",
+					Symbol:        "TWKS",
+					Class:         c.AssetClassStock,
+					Currency:      c.Currency{FromCurrencyCode: "USD"},
+					QuotePrice:    c.QuotePrice{Price: 110.0, PricePrevClose: 100.0, PriceOpen: 100.0, PriceDayHigh: 110.0, PriceDayLow: 90.0, Change: 10.0, ChangePercent: 10.0},
+					QuoteExtended: c.QuoteExtended{FiftyTwoWeekHigh: 150, FiftyTwoWeekLow: 50, MarketCap: 1000000},
+				},
+				{
+					Name:       "Microsoft Inc",
+					Symbol:     "MSFT",
+					Class:      c.AssetClassStock,
+					Currency:   c.Currency{FromCurrencyCode: "GBP"},
+					QuotePrice: c.QuotePrice{Price: 220.0, PricePrevClose: 200.0, PriceOpen: 200.0, PriceDayHigh: 220.0, PriceDayLow: 180.0, Change: 20.0, ChangePercent: 10.0},
+				},
+			}
 			inputAssetGroupQuote.AssetGroup.ConfigAssetGroup.Holdings = []c.Lot{
 				{
 					Symbol:    "TWKS",
 					UnitCost:  100,
 					Quantity:  10,
+					FixedCost: 0,
+				},
+				{
+					Symbol:    "MSFT",
+					UnitCost:  100,
+					Quantity:  1,
 					FixedCost: 0,
 				},
 			}
@@ -130,11 +158,55 @@ var _ = Describe("Asset", func() {
 				Expect(outputAssets[0].Holding.UnitCost).To(Equal(150.0))
 			})
 			It("should convert holding summary values", func() {
-				Expect(outputHoldingSummary.Cost).To(Equal(1500.0))
-				Expect(outputHoldingSummary.Value).To(Equal(1650.0))
-				Expect(outputHoldingSummary.TotalChange.Amount).To(Equal(150.0))
-				Expect(outputHoldingSummary.DayChange.Amount).To(Equal(150.0))
+				Expect(outputHoldingSummary.Cost).To(Equal(1700.0))
+				Expect(outputHoldingSummary.Value).To(Equal(2090.0))
+				Expect(outputHoldingSummary.TotalChange.Amount).To(Equal(390.0))
+				Expect(outputHoldingSummary.DayChange.Amount).To(Equal(190.0))
 			})
+
+			When("and the summary conversion only option is set", func() {
+
+				inputContextSummaryConversion := inputContext
+				inputContextSummaryConversion.Config = c.Config{
+					Currency:                   "EUR",
+					CurrencyConvertSummaryOnly: true,
+				}
+
+				_, outputHoldingSummary := GetAssets(inputContextSummaryConversion, inputAssetGroupQuote)
+
+				It("should convert holding summary values", func() {
+					Expect(outputHoldingSummary.Cost).To(Equal(1700.0))
+					Expect(outputHoldingSummary.Value).To(Equal(2090.0))
+					Expect(outputHoldingSummary.TotalChange.Amount).To(Equal(390.0))
+					Expect(outputHoldingSummary.DayChange.Amount).To(Equal(190.0))
+				})
+
+			})
+
+			When("and the disable unit cost conversion option is set", func() {
+
+				inputContextDisableUnitCostConversion := inputContext
+				inputContextDisableUnitCostConversion.Config = c.Config{
+					Currency:                          "EUR",
+					CurrencyDisableUnitCostConversion: true,
+				}
+
+				outputAssets, outputHoldingSummary := GetAssets(inputContextDisableUnitCostConversion, inputAssetGroupQuote)
+
+				It("should not convert holding costs", func() {
+					Expect(outputAssets[0].Holding.Cost).To(Equal(1000.0)) // 1000 EUR unconverted since option is set
+					Expect(outputAssets[0].Holding.UnitCost).To(Equal(100.0))
+					Expect(outputAssets[0].Holding.Value).To(Equal(1650.0)) // Conversion 10 shares @ 110 USD/share to EUR
+					Expect(outputAssets[0].Holding.TotalChange.Amount).To(Equal(650.0))
+					Expect(outputAssets[0].Holding.TotalChange.Percent).To(Equal(65.0))
+					Expect(outputHoldingSummary.Cost).To(Equal(1100.0)) // Sum of 1000 EUR + 100 EUR
+					Expect(outputHoldingSummary.DayChange.Percent).To(Equal(9.090909090909092))
+					Expect(outputHoldingSummary.TotalChange.Amount).To(Equal(990.0))
+					Expect(outputHoldingSummary.TotalChange.Percent).To(Equal(90.0))
+				})
+
+			})
+
 		})
 
 		When("there is no explicit currency conversion", func() {
@@ -191,42 +263,5 @@ var _ = Describe("Asset", func() {
 			})
 		})
 
-	})
-
-	Describe("GetSymbols", func() {
-
-		It("should return a slice of symbols", func() {
-
-			inputConfig := c.Config{
-				Watchlist: []string{"GOOG", "ARKW"},
-				Lots: []c.Lot{
-					{Symbol: "ABNB", UnitCost: 100, Quantity: 10},
-					{Symbol: "ARKW", UnitCost: 200, Quantity: 10},
-				},
-				ShowHoldings: true,
-			}
-			output := GetSymbols(inputConfig)
-			expected := []string{
-				"ABNB",
-				"ARKW",
-				"GOOG",
-			}
-			Expect(output).To(ContainElements(expected))
-		})
-
-		When("holdings are hidden", func() {
-			It("should not show symbols for holdings", func() {
-				inputConfig := c.Config{
-					Watchlist:    []string{"GOOG", "ARKW"},
-					ShowHoldings: false,
-				}
-				output := GetSymbols(inputConfig)
-				expected := []string{
-					"ARKW",
-					"GOOG",
-				}
-				Expect(output).To(ContainElements(expected))
-			})
-		})
 	})
 })

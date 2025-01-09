@@ -5,10 +5,11 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/achannarasappa/ticker/internal/asset"
-	c "github.com/achannarasappa/ticker/internal/common"
-	quoteYahoo "github.com/achannarasappa/ticker/internal/quote/yahoo"
-	"github.com/achannarasappa/ticker/internal/ui/util"
+	"github.com/achannarasappa/ticker/v4/internal/cli/symbol"
+	c "github.com/achannarasappa/ticker/v4/internal/common"
+	"github.com/achannarasappa/ticker/v4/internal/quote"
+	yahooClient "github.com/achannarasappa/ticker/v4/internal/quote/yahoo/client"
+	"github.com/achannarasappa/ticker/v4/internal/ui/util"
 
 	"github.com/adrg/xdg"
 	"github.com/go-resty/resty/v2"
@@ -32,50 +33,72 @@ type Options struct {
 	Sort                  string
 }
 
+type symbolSource struct {
+	symbol string
+	source c.QuoteSource
+}
+
 // Run starts the ticker UI
 func Run(uiStartFn func() error) func(*cobra.Command, []string) {
-	return func(cmd *cobra.Command, args []string) {
+	return func(_ *cobra.Command, _ []string) {
 		err := uiStartFn()
 
 		if err != nil {
-			fmt.Println(fmt.Errorf("Unable to start UI: %w", err).Error())
+			fmt.Println(fmt.Errorf("unable to start UI: %w", err).Error())
 		}
 	}
 }
 
 // Validate checks whether config is valid and returns an error if invalid or if an error was generated earlier
-func Validate(ctx *c.Context, options *Options, prevErr *error) func(*cobra.Command, []string) error {
-	return func(cmd *cobra.Command, args []string) error {
+func Validate(config *c.Config, options *Options, prevErr *error) func(*cobra.Command, []string) error {
+	return func(_ *cobra.Command, _ []string) error {
 
-		if prevErr != nil {
+		if prevErr != nil && *prevErr != nil {
 			return *prevErr
 		}
 
-		if len(ctx.Config.Watchlist) == 0 && len(options.Watchlist) == 0 && len(ctx.Config.Lots) == 0 {
-			return errors.New("Invalid config: No watchlist provided")
+		if len(config.Watchlist) == 0 && len(options.Watchlist) == 0 && len(config.Lots) == 0 && len(config.AssetGroup) == 0 {
+			return errors.New("invalid config: No watchlist provided") //nolint:goerr113
 		}
 
 		return nil
 	}
 }
 
+func GetDependencies() c.Dependencies {
+
+	return c.Dependencies{
+		Fs: afero.NewOsFs(),
+		HttpClients: c.DependenciesHttpClients{
+			Default:      resty.New(),
+			Yahoo:        yahooClient.New(resty.New(), resty.New()),
+			YahooSession: resty.New(),
+		},
+	}
+
+}
+
 // GetContext builds the context from the config and reference data
-func GetContext(d c.Dependencies, options Options, configPath string) (c.Context, error) {
+func GetContext(d c.Dependencies, config c.Config) (c.Context, error) {
 	var (
 		reference c.Reference
-		config    c.Config
+		groups    []c.AssetGroup
 		err       error
 	)
 
-	config, err = readConfig(d.Fs, configPath)
+	err = yahooClient.RefreshSession(d.HttpClients.Yahoo, d.HttpClients.YahooSession)
 
 	if err != nil {
 		return c.Context{}, err
 	}
 
-	config = getConfig(config, options, *d.HttpClient)
-	reference, err = getReference(config, *d.HttpClient)
-	groups := getGroups(config)
+	groups, err = getGroups(config, *d.HttpClients.Default)
+
+	if err != nil {
+		return c.Context{}, err
+	}
+
+	reference, err = getReference(config, groups, d.HttpClients.Yahoo)
 
 	if err != nil {
 		return c.Context{}, err
@@ -87,7 +110,7 @@ func GetContext(d c.Dependencies, options Options, configPath string) (c.Context
 		Groups:    groups,
 	}
 
-	return context, nil
+	return context, err
 }
 
 func readConfig(fs afero.Fs, configPathOption string) (c.Config, error) {
@@ -95,46 +118,61 @@ func readConfig(fs afero.Fs, configPathOption string) (c.Config, error) {
 	configPath, err := getConfigPath(fs, configPathOption)
 
 	if err != nil {
-		return config, nil
+		return config, nil //nolint:nilerr
 	}
 	handle, err := fs.Open(configPath)
 
 	if err != nil {
-		return config, fmt.Errorf("Invalid config: %w", err)
+		return config, fmt.Errorf("invalid config: %w", err)
 	}
 
 	defer handle.Close()
 	err = yaml.NewDecoder(handle).Decode(&config)
 
 	if err != nil {
-		return config, fmt.Errorf("Invalid config: %w", err)
+		return config, fmt.Errorf("invalid config: %w", err)
 	}
 
 	return config, nil
 }
 
-func getReference(config c.Config, client resty.Client) (c.Reference, error) {
+func getReference(config c.Config, assetGroups []c.AssetGroup, client *resty.Client) (c.Reference, error) {
 
-	symbols := asset.GetSymbols(config)
+	currencyRates, err := quote.GetAssetGroupsCurrencyRates(client, assetGroups, config.Currency)
+	if err != nil {
+		return c.Reference{}, err
+	}
 
-	currencyRates, err := quoteYahoo.GetCurrencyRates(client, symbols, config.Currency)
 	styles := util.GetColorScheme(config.ColorScheme)
+	sourceToUnderlyingAssetSymbols, err := quote.GetAssetGroupUnderlyingAssetSymbols(client, assetGroups)
+
+	if err != nil {
+		return c.Reference{}, err
+	}
 
 	return c.Reference{
-		CurrencyRates: currencyRates,
-		Styles:        styles,
+		CurrencyRates:                  currencyRates,
+		SourceToUnderlyingAssetSymbols: sourceToUnderlyingAssetSymbols,
+		Styles:                         styles,
 	}, err
 
 }
 
-func getConfig(config c.Config, options Options, client resty.Client) c.Config {
+func GetConfig(dep c.Dependencies, configPath string, options Options) (c.Config, error) {
+
+	config, err := readConfig(dep.Fs, configPath)
+
+	if err != nil {
+		return c.Config{}, err
+	}
 
 	if len(options.Watchlist) != 0 {
 		config.Watchlist = strings.Split(strings.ReplaceAll(options.Watchlist, " ", ""), ",")
 	}
 
 	if len(config.Proxy) > 0 {
-		client.SetProxy(config.Proxy)
+		dep.HttpClients.Default.SetProxy(config.Proxy)
+		dep.HttpClients.Yahoo.SetProxy(config.Proxy)
 	}
 
 	config.RefreshInterval = getRefreshInterval(options.RefreshInterval, config.RefreshInterval)
@@ -146,7 +184,7 @@ func getConfig(config c.Config, options Options, client resty.Client) c.Config {
 	config.Proxy = getStringOption(options.Proxy, config.Proxy)
 	config.Sort = getStringOption(options.Sort, config.Sort)
 
-	return config
+	return config, nil
 }
 
 func getConfigPath(fs afero.Fs, configPathOption string) (string, error) {
@@ -168,7 +206,7 @@ func getConfigPath(fs afero.Fs, configPathOption string) (string, error) {
 	err = v.ReadInConfig()
 
 	if err != nil {
-		return "", fmt.Errorf("Invalid config: %w", err)
+		return "", fmt.Errorf("invalid config: %w", err)
 	}
 
 	return v.ConfigFileUsed(), nil
@@ -213,10 +251,16 @@ func getStringOption(cliValue string, configValue string) string {
 	return ""
 }
 
-func getGroups(config c.Config) []c.AssetGroup {
+func getGroups(config c.Config, client resty.Client) ([]c.AssetGroup, error) {
 
-	var groups []c.AssetGroup
+	groups := make([]c.AssetGroup, 0)
 	var configAssetGroups []c.ConfigAssetGroup
+
+	tickerSymbolToSourceSymbol, err := symbol.GetTickerSymbols(client)
+
+	if err != nil {
+		return []c.AssetGroup{}, err
+	}
 
 	if len(config.Watchlist) > 0 || len(config.Lots) > 0 {
 		configAssetGroups = append(configAssetGroups, c.ConfigAssetGroup{
@@ -231,34 +275,112 @@ func getGroups(config c.Config) []c.AssetGroup {
 	for _, configAssetGroup := range configAssetGroups {
 
 		symbols := make(map[string]bool)
-		symbolsUnique := make([]string, 0)
+		symbolsUnique := make(map[c.QuoteSource]c.AssetGroupSymbolsBySource)
+		var assetGroupSymbolsBySource []c.AssetGroupSymbolsBySource
 
 		for _, symbol := range configAssetGroup.Watchlist {
 			if !symbols[symbol] {
 				symbols[symbol] = true
-				symbolsUnique = append(symbolsUnique, symbol)
+				symbolAndSource := getSymbolAndSource(symbol, tickerSymbolToSourceSymbol)
+				symbolsUnique = appendSymbol(symbolsUnique, symbolAndSource)
 			}
 		}
 
 		for _, lot := range configAssetGroup.Holdings {
 			if !symbols[lot.Symbol] {
 				symbols[lot.Symbol] = true
-				symbolsUnique = append(symbolsUnique, lot.Symbol)
+				symbolAndSource := getSymbolAndSource(lot.Symbol, tickerSymbolToSourceSymbol)
+				symbolsUnique = appendSymbol(symbolsUnique, symbolAndSource)
 			}
+		}
+
+		for _, symbolsBySource := range symbolsUnique {
+			assetGroupSymbolsBySource = append(assetGroupSymbolsBySource, symbolsBySource)
 		}
 
 		groups = append(groups, c.AssetGroup{
 			ConfigAssetGroup: configAssetGroup,
-			SymbolsBySource: []c.AssetGroupSymbolsBySource{
-				{
-					Source:  c.QuoteSourceYahoo,
-					Symbols: symbolsUnique,
-				},
-			},
+			SymbolsBySource:  assetGroupSymbolsBySource,
 		})
 
 	}
 
-	return groups
+	return groups, nil
+
+}
+
+func getSymbolAndSource(symbol string, tickerSymbolToSourceSymbol symbol.TickerSymbolToSourceSymbol) symbolSource {
+
+	symbolUppercase := strings.ToUpper(symbol)
+
+	if strings.HasSuffix(symbolUppercase, ".CG") {
+		return symbolSource{
+			source: c.QuoteSourceCoingecko,
+			symbol: strings.ToLower(symbol)[:len(symbol)-3],
+		}
+	}
+
+	if strings.HasSuffix(symbolUppercase, ".CC") {
+		return symbolSource{
+			source: c.QuoteSourceCoinCap,
+			symbol: strings.ToLower(symbol)[:len(symbol)-3],
+		}
+	}
+
+	if strings.HasSuffix(symbolUppercase, ".CB") {
+
+		symbol = strings.ToUpper(symbol)[:len(symbol)-3]
+
+		// Futures contracts on Coinbase Derivatives Exchange are implicitly USD-denominated
+		if strings.HasSuffix(symbol, "-CDE") {
+			return symbolSource{
+				source: c.QuoteSourceCoinbase,
+				symbol: symbol,
+			}
+		}
+
+		return symbolSource{
+			source: c.QuoteSourceCoinbase,
+			symbol: symbol + "-USD",
+		}
+	}
+
+	if strings.HasSuffix(symbolUppercase, ".X") {
+
+		if tickerSymbolToSource, exists := tickerSymbolToSourceSymbol[symbolUppercase]; exists {
+
+			return symbolSource{
+				source: tickerSymbolToSource.Source,
+				symbol: tickerSymbolToSource.SourceSymbol,
+			}
+
+		}
+
+	}
+
+	return symbolSource{
+		source: c.QuoteSourceYahoo,
+		symbol: symbolUppercase,
+	}
+
+}
+
+func appendSymbol(symbolsUnique map[c.QuoteSource]c.AssetGroupSymbolsBySource, symbolAndSource symbolSource) map[c.QuoteSource]c.AssetGroupSymbolsBySource {
+
+	if symbolsBySource, ok := symbolsUnique[symbolAndSource.source]; ok {
+
+		symbolsBySource.Symbols = append(symbolsBySource.Symbols, symbolAndSource.symbol)
+
+		symbolsUnique[symbolAndSource.source] = symbolsBySource
+
+		return symbolsUnique
+	}
+
+	symbolsUnique[symbolAndSource.source] = c.AssetGroupSymbolsBySource{
+		Source:  symbolAndSource.source,
+		Symbols: []string{symbolAndSource.symbol},
+	}
+
+	return symbolsUnique
 
 }

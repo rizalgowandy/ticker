@@ -1,11 +1,11 @@
 package currency
 
 import (
-	c "github.com/achannarasappa/ticker/internal/common"
+	c "github.com/achannarasappa/ticker/v4/internal/common"
 )
 
 // CurrencyRateByUse represents the currency conversion rate for each use case
-type CurrencyRateByUse struct {
+type CurrencyRateByUse struct { //nolint:golint,revive
 	ToCurrencyCode string
 	QuotePrice     float64
 	PositionCost   float64
@@ -16,7 +16,7 @@ type CurrencyRateByUse struct {
 // GetCurrencyRateFromContext reads currency rates from the context and sets the conversion rate for each use case
 func GetCurrencyRateFromContext(ctx c.Context, fromCurrency string) CurrencyRateByUse {
 
-	// If currency is convertable
+	// If currency is convertible
 	if currencyRate, ok := ctx.Reference.CurrencyRates[fromCurrency]; ok {
 
 		currencyRateCost := currencyRate.Rate

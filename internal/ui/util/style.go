@@ -4,7 +4,7 @@ import (
 	"math"
 	"regexp"
 
-	c "github.com/achannarasappa/ticker/internal/common"
+	c "github.com/achannarasappa/ticker/v4/internal/common"
 	"github.com/lucasb-eyer/go-colorful"
 	te "github.com/muesli/termenv"
 )
@@ -13,6 +13,7 @@ const (
 	maxPercentChangeColorGradient = 10
 )
 
+//nolint:gochecknoglobals
 var (
 	p                  = te.ColorProfile()
 	stylePricePositive = newStyleFromGradient("#C6FF40", "#779929")
@@ -25,10 +26,11 @@ func NewStyle(fg string, bg string, bold bool) func(string) string {
 	if bold {
 		s = s.Bold()
 	}
+
 	return s.Styled
 }
 
-func stylePrice(percent float64, text string) string {
+func stylePrice(percent float64, text string) string { //nolint:cyclop
 
 	out := te.String(text)
 
@@ -76,6 +78,7 @@ func newStyleFromGradient(startColorHex string, endColorHex string) func(float64
 
 		normalizedPercent := getNormalizedPercentWithMax(percent, maxPercentChangeColorGradient)
 		textColor := p.Color(c1.BlendHsv(c2, normalizedPercent).Hex())
+
 		return te.String(text).Foreground(textColor).String()
 
 	}
@@ -88,6 +91,7 @@ func getNormalizedPercentWithMax(percent float64, maxPercent float64) float64 {
 	if absolutePercent >= maxPercent {
 		return 1.0
 	}
+
 	return math.Abs(percent / maxPercent)
 
 }

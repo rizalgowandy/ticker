@@ -4,7 +4,7 @@ import (
 	"math"
 	"strconv"
 
-	c "github.com/achannarasappa/ticker/internal/common"
+	c "github.com/achannarasappa/ticker/v4/internal/common"
 )
 
 func getPrecision(f float64) int {
@@ -27,6 +27,10 @@ func getPrecision(f float64) int {
 		return 3
 	}
 
+	if v >= 1000 && f < 0 {
+		return 1
+	}
+
 	return 2
 }
 
@@ -40,17 +44,17 @@ func ConvertFloatToString(f float64, isVariablePrecision bool) string {
 	}
 
 	if f > 1000000000000 {
-		f = f / 1000000000000
+		f /= 1000000000000
 		unit = " T"
 	}
 
 	if f > 1000000000 {
-		f = f / 1000000000
+		f /= 1000000000
 		unit = " B"
 	}
 
 	if f > 1000000 {
-		f = f / 1000000
+		f /= 1000000
 		unit = " M"
 	}
 

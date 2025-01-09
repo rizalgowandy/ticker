@@ -2,12 +2,13 @@ package yahoo_test
 
 import (
 	"fmt"
-	"io/ioutil"
-	"net/http"
+
+	yahooClient "github.com/achannarasappa/ticker/v4/internal/quote/yahoo/client"
+	"github.com/go-resty/resty/v2"
 
 	"github.com/xeipuuv/gojsonschema"
 
-	. "github.com/onsi/ginkgo"
+	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 )
 
@@ -44,37 +45,124 @@ var _ = Describe("Quote", func() {
 								"type": "string"
 							},
 							"regularMarketChange": {
-								"type": "number"
+								"$ref": "#/definitions/fieldNumber"
 							},
 							"regularMarketChangePercent": {
-								"type": "number"
+								"$ref": "#/definitions/fieldNumber"
 							},
 							"regularMarketPrice": {
-								"type": "number"
+								"$ref": "#/definitions/fieldNumber"
 							},
 							"regularMarketTime": {
-								"type": "integer"
+								"$ref": "#/definitions/fieldInteger"
 							},
 							"regularMarketPreviousClose": {
-								"type": "number"
+								"$ref": "#/definitions/fieldNumber"
+							},
+							"regularMarketOpen": {
+								"$ref": "#/definitions/fieldNumber"
+							},
+							"regularMarketDayRange": {
+								"$ref": "#/definitions/fieldString"
+							},
+							"regularMarketDayHigh": {
+								"$ref": "#/definitions/fieldNumber"
+							},
+							"regularMarketDayLow": {
+								"$ref": "#/definitions/fieldNumber"
+							},
+							"regularMarketVolume": {
+								"$ref": "#/definitions/fieldNumber"
+							},
+							"postMarketChange": {
+								"$ref": "#/definitions/fieldNumber"
+							},
+							"postMarketChangePercent": {
+								"$ref": "#/definitions/fieldNumber"
+							},
+							"postMarketPrice": {
+								"$ref": "#/definitions/fieldNumber"
+							},
+							"preMarketChange": {
+								"$ref": "#/definitions/fieldNumber"
+							},
+							"preMarketChangePercent": {
+								"$ref": "#/definitions/fieldNumber"
+							},
+							"preMarketPrice": {
+								"$ref": "#/definitions/fieldNumber"
+							},
+							"fiftyTwoWeekHigh": {
+								"$ref": "#/definitions/fieldNumber"
+							},
+							"fiftyTwoWeekLow": {
+								"$ref": "#/definitions/fieldNumber"
 							},
 							"symbol": {
+								"type": "string"
+							},
+							"fullExchangeName": {
+								"type": "string"
+							},
+							"exchangeDataDelayedBy": {
+								"type": "number"
+							},
+							"marketCap": {
+								"$ref": "#/definitions/fieldNumber"
+							},
+							"quoteType": {
+								"type": "string"
+							}
+						}
+					},
+					"fieldNumber": {
+						"properties": {
+							"raw": {
+								"type": "number"
+							},
+							"fmt": {
+								"type": "string"
+							}
+						}
+					},
+					"fieldInteger": {
+						"properties": {
+							"raw": {
+								"type": "integer"
+							},
+							"fmt": {
+								"type": "string"
+							}
+						}
+					},
+					"fieldString": {
+						"properties": {
+							"raw": {
+								"type": "string"
+							},
+							"fmt": {
 								"type": "string"
 							}
 						}
 					}
 				},
-				"required": ["quoteResponse"]
-			  }`
+				"required": [
+					"quoteResponse"
+				]
+			}`
 
-			resp, err := http.Get("https://query1.finance.yahoo.com/v7/finance/quote?lang=en-US&region=US&corsDomain=finance.yahoo.com&symbols=NET")
+			client := yahooClient.New(resty.New(), resty.New())
+
+			resp, err := client.R().
+				SetQueryParam("fields", "shortName,regularMarketChange,regularMarketChangePercent,regularMarketPrice,regularMarketPreviousClose,regularMarketOpen,regularMarketDayRange,regularMarketDayHigh,regularMarketDayLow,regularMarketVolume,postMarketChange,postMarketChangePercent,postMarketPrice,preMarketChange,preMarketChangePercent,preMarketPrice,fiftyTwoWeekHigh,fiftyTwoWeekLow,marketCap").
+				SetQueryParam("symbols", "NET").
+				Get("/v7/finance/quote")
+
 			if err != nil {
 				panic(err)
 			}
-			defer resp.Body.Close()
 
-			body, _ := ioutil.ReadAll(resp.Body)
-			bodyString := string(body)
+			bodyString := resp.String()
 			expectedSchema := gojsonschema.NewStringLoader(responseSchema)
 			actualResponse := gojsonschema.NewStringLoader(bodyString)
 			result, err := gojsonschema.Validate(expectedSchema, actualResponse)
@@ -91,7 +179,7 @@ var _ = Describe("Quote", func() {
 			}
 
 			Expect(result.Valid()).To(Equal(true))
-			Expect(resp.Status).To(Equal("200 OK"))
+			Expect(resp.StatusCode()).To(Equal(200))
 		})
 	})
 })

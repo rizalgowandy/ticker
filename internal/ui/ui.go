@@ -5,18 +5,19 @@ import (
 	"time"
 
 	grid "github.com/achannarasappa/term-grid"
-	"github.com/achannarasappa/ticker/internal/asset"
-	c "github.com/achannarasappa/ticker/internal/common"
-	quote "github.com/achannarasappa/ticker/internal/quote"
-	"github.com/achannarasappa/ticker/internal/ui/component/summary"
-	"github.com/achannarasappa/ticker/internal/ui/component/watchlist"
+	"github.com/achannarasappa/ticker/v4/internal/asset"
+	c "github.com/achannarasappa/ticker/v4/internal/common"
+	quote "github.com/achannarasappa/ticker/v4/internal/quote"
+	"github.com/achannarasappa/ticker/v4/internal/ui/component/summary"
+	"github.com/achannarasappa/ticker/v4/internal/ui/component/watchlist"
 
-	util "github.com/achannarasappa/ticker/internal/ui/util"
+	util "github.com/achannarasappa/ticker/v4/internal/ui/util"
 
 	"github.com/charmbracelet/bubbles/viewport"
 	tea "github.com/charmbracelet/bubbletea"
 )
 
+//nolint:gochecknoglobals
 var (
 	styleLogo  = util.NewStyle("#ffffd7", "#ff8700", true)
 	styleGroup = util.NewStyle("#8a8a8a", "#303030", false)
@@ -45,6 +46,7 @@ type Model struct {
 
 func getTime() string {
 	t := time.Now()
+
 	return fmt.Sprintf("%s %02d:%02d:%02d", t.Weekday().String(), t.Hour(), t.Minute(), t.Second())
 }
 
@@ -60,7 +62,7 @@ func generateQuoteMsg(m Model, skipUpdate bool) func() tea.Msg {
 }
 
 func (m Model) updateQuotes() tea.Cmd {
-	return tea.Tick(time.Second*time.Duration(m.requestInterval), func(t time.Time) tea.Msg {
+	return tea.Tick(time.Second*time.Duration(m.requestInterval), func(_ time.Time) tea.Msg {
 		return generateQuoteMsg(m, false)()
 	})
 }
@@ -75,7 +77,7 @@ func NewModel(dep c.Dependencies, ctx c.Context) Model {
 		headerHeight:       getVerticalMargin(ctx.Config),
 		ready:              false,
 		requestInterval:    ctx.Config.RefreshInterval,
-		getQuotes:          quote.GetAssetGroupQuote(dep),
+		getQuotes:          quote.GetAssetGroupQuote(dep, ctx.Reference),
 		watchlist:          watchlist.NewModel(ctx),
 		summary:            summary.NewModel(ctx),
 		groupMaxIndex:      groupMaxIndex,
@@ -97,20 +99,20 @@ type quoteMsg struct {
 }
 
 // Update hook for bubbletea
-func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) { //nolint:ireturn,cyclop
 
 	switch msg := msg.(type) {
 
 	case tea.KeyMsg:
 		switch msg.String() {
-		case "tab":
 
-			m.groupSelectedIndex++
-
-			if m.groupSelectedIndex >= m.groupMaxIndex {
-				m.groupSelectedIndex = 0
+		case "tab", "shift+tab":
+			groupSelectedCursor := -1
+			if msg.String() == "tab" {
+				groupSelectedCursor = 1
 			}
 
+			m.groupSelectedIndex = (m.groupSelectedIndex + groupSelectedCursor + m.groupMaxIndex + 1) % (m.groupMaxIndex + 1)
 			m.groupSelectedName = m.ctx.Groups[m.groupSelectedIndex].Name
 
 			return m, generateQuoteMsg(m, true)
@@ -171,10 +173,10 @@ func (m Model) View() string {
 	viewSummary := ""
 
 	if m.ctx.Config.ShowSummary && m.ctx.Config.ShowHoldings {
-		viewSummary += m.summary.View()
+		viewSummary += m.summary.View() + "\n"
 	}
 
-	return viewSummary + "\n" +
+	return viewSummary +
 		m.viewport.View() + "\n" +
 		footer(m.viewport.Width, m.lastUpdateTime, m.groupSelectedName)
 
